@@ -14,12 +14,12 @@ date: 2024-06-11 16:53:16
 
 ## Prerequisites
 
-* An OpenAI API key or an Azure OpenAI key. 
+* An API key for your LLM. 
 * A project that meets the [criteria noted below](#Create-a-Prompt). 
 
 ## Model provider API keys
 
-You can specify one OpenAI API key and/or multiple Azure OpenAI keys per organization. Keys only need to be added once. 
+You can specify one OpenAI API key and/or multiple custom and Azure OpenAI keys per organization. Keys only need to be added once. 
 
 Click **API Keys** in the top right of the Prompts page to open the **Model Provider API Keys** window:
 
@@ -30,6 +30,8 @@ Once added, you will have the option to select from the base models associated w
 ![Screenshot of the Base Models drop-down](/images/prompts/base_models.png)
 
 To remove the key, click **API Keys** in the upper right of the Prompts page. You'll have the option to remove the key and add a new one. 
+
+### Add OpenAI, Azure OpenAI, or a custom model
 
 {% details <b>Use an OpenAI key</b> %}
 
@@ -77,6 +79,24 @@ You can find all this information in the **Details** section of the deployment i
 
 {% enddetails %}
 
+{% details <b>Use a custom LLM</b> %}
+
+You can use your own self-hosted and fine-tuned model as long as it meets the following criteria:
+
+* Your server must provide [JSON mode](https://python.useinstructor.com/concepts/patching/#json-mode) for the LLM. 
+* The server API must follow [OpenAI format](https://platform.openai.com/docs/api-reference/chat/create#chat-create-response_format). 
+
+Examples of compatible LLMs include [Ollama](https://ollama.com/) and [sglang](https://github.com/sgl-project/sglang?tab=readme-ov-file#openai-compatible-api). 
+
+To add a custom model, enter the following:
+
+* A name for the model. 
+* The endpoint URL for the model. For example, `https://my.openai.endpoint.com/v1`
+* An API key to access the model. (Optional)
+* An auth token to access the model. (Optional)
+
+{% enddetails %}
+
 
 ## Create a Prompt
 
@@ -100,10 +120,11 @@ From the Prompts page, click **Create Prompt** in the upper right and then compl
         * For text classification, this means that the labeling configuration for the project must use `Choice` tags. 
         * For NER, this means that the labeling configuration for the project must use `Label` tags.  
     * The project must have one output type (`Choice` or `Label`) and not a mix of both. 
+    * The project cannot include multiple `Choices` or `Labels` blocks in its labeling configuration. 
     * The project must include text data. While it can include other data types such as images or video, it must include `<Text>`.
     * You must have access to the project. If you are in the Manager role, you need to be added to the project to have access. 
     * The project cannot be located in your Personal Sandbox workspace. 
-    * While projects connected to an ML backend will still appear in the list of eligible projects, we do not recommend using Prompts with an ML backend. 
+    * While projects connected to an ML backend will still appear in the list of eligible projects, we do not recommend using Prompts with an ML backend as this can interfere with how accuracy and score are calculated when evaluating the prompt. 
 
 ## Types
 
