@@ -5,7 +5,6 @@ import logging
 from typing import Any, Mapping, Optional
 
 from annoying.fields import AutoOneToOneField
-from core.feature_flags import flag_set
 from core.label_config import (
     check_control_in_config_by_regex,
     check_toname_in_config_by_regex,
@@ -327,13 +326,7 @@ class Project(ProjectMixin, models.Model):
 
     @property
     def has_any_predictions(self):
-        if flag_set(
-            'fflag_perf_back_lsdv_4695_update_prediction_query_to_use_direct_project_relation',
-            user='auto',
-        ):
-            return Prediction.objects.filter(Q(project=self.id)).exists()
-        else:
-            return Prediction.objects.filter(Q(task__project=self.id)).exists()
+        return Prediction.objects.filter(Q(project=self.id)).exists()
 
     @property
     def business(self):
@@ -933,14 +926,7 @@ class Project(ProjectMixin, models.Model):
         :param extended: Boolean, if True, returns additional information. Default is False.
         :return: Dict or list containing model versions and their count predictions.
         """
-        if flag_set(
-            'fflag_perf_back_lsdv_4695_update_prediction_query_to_use_direct_project_relation',
-            user='auto',
-        ):
-            predictions = Prediction.objects.filter(project=self)
-        else:
-            predictions = Prediction.objects.filter(task__project=self)
-        # model_versions = set(predictions.values_list('model_version', flat=True).distinct())
+        predictions = Prediction.objects.filter(project=self)
 
         if extended:
             model_versions = list(
@@ -1208,8 +1194,8 @@ class ProjectSummary(models.Model):
             self.common_data_columns = list(sorted(common_data_columns))
         else:
             self.common_data_columns = list(sorted(set(self.common_data_columns) & common_data_columns))
-        logger.debug(f'summary.all_data_columns = {self.all_data_columns}')
-        logger.debug(f'summary.common_data_columns = {self.common_data_columns}')
+        logger.info(f'update summary.all_data_columns = {self.all_data_columns} project_id={self.project_id}')
+        logger.info(f'update summary.common_data_columns = {self.common_data_columns} project_id={self.project_id}')
         self.save(update_fields=['all_data_columns', 'common_data_columns'])
 
     def remove_data_columns(self, tasks):
@@ -1232,8 +1218,8 @@ class ProjectSummary(models.Model):
                 if key in common_data_columns:
                     common_data_columns.remove(key)
             self.common_data_columns = common_data_columns
-        logger.debug(f'summary.all_data_columns = {self.all_data_columns}')
-        logger.debug(f'summary.common_data_columns = {self.common_data_columns}')
+        logger.info(f'remove summary.all_data_columns = {self.all_data_columns} project_id={self.project_id}')
+        logger.info(f'remove summary.common_data_columns = {self.common_data_columns} project_id={self.project_id}')
         self.save(
             update_fields=[
                 'all_data_columns',
