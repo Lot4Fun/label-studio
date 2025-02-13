@@ -1,5 +1,0 @@
-# Ensure shell script uses LF.
-Dockerfile  eol=lf
-*.sh        eol=lf
-.github/workflows/** merge=ours
-.github/workflows/** merge=ours
