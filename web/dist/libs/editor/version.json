@@ -1,6 +1,6 @@
 {
-  "message": "fix: LEAP-1829: Fix \"No LabelModel in NodeView\" error in Sentry (#7067)",
-  "commit": "687f3f9272c03a49ea1d39f644c90a892ae2f46d",
-  "date": "2025-02-12T23:13:22.000Z",
+  "message": "fix: LEAP-1892: [FE] Deeply nested Choices are visible when their parents are hidden (#7180)",
+  "commit": "52e941a0860ea8211eaa77bef0e10628db3e1b69",
+  "date": "2025-03-14T12:07:16.000Z",
   "branch": "develop"
 }
