@@ -11,12 +11,10 @@ import Result from "../../regions/Result";
 import Utils from "../../utils";
 import {
   FF_DEV_1284,
-  FF_DEV_2432,
   FF_DEV_3391,
   FF_LLM_EPIC,
   FF_LSDV_3009,
   FF_LSDV_4583,
-  FF_LSDV_4988,
   FF_REVIEWER_FLOW,
   isFF,
 } from "../../utils/feature-flags";
@@ -96,6 +94,26 @@ const TrackedState = types.model("TrackedState", {
   relationStore: types.optional(RelationStore, {}),
 });
 
+// Create a union type that can handle both user references and frozen user objects
+const UserOrReference = types.union({
+  dispatcher: (snapshot) => {
+    // If it's a number, it's a reference to a user ID
+    if (typeof snapshot === "number") {
+      return types.safeReference(UserExtended);
+    }
+    // If it's a full user object, store it as frozen to avoid duplicate instances
+    if (snapshot && typeof snapshot === "object" && (snapshot.firstName || snapshot.email || snapshot.username)) {
+      return types.frozen();
+    }
+    // Default to reference for any other case
+    return types.safeReference(UserExtended);
+  },
+  cases: {
+    frozen: types.frozen(),
+    reference: types.safeReference(UserExtended),
+  },
+});
+
 const _Annotation = types
   .model("AnnotationBase", {
     id: types.identifier,
@@ -111,7 +129,7 @@ const _Annotation = types
     createdDate: types.optional(types.string, Utils.UDate.currentISODate()),
     createdAgo: types.maybeNull(types.string),
     createdBy: types.optional(types.string, "Admin"),
-    user: types.optional(types.maybeNull(types.safeReference(UserExtended)), null),
+    user: types.optional(types.maybeNull(UserOrReference), null),
     score: types.maybeNull(types.number),
 
     parent_prediction: types.maybeNull(types.integer),
@@ -171,13 +189,15 @@ const _Annotation = types
   }))
   .preProcessSnapshot((sn) => {
     // sn.draft = Boolean(sn.draft);
-    let user = sn.user ?? sn.completed_by ?? undefined;
+    const user = sn.user ?? sn.completed_by ?? undefined;
     let root;
 
     const updateIds = (item) => {
       const children = item.children?.map(updateIds);
+      const imageEntities = item.imageEntities?.map(updateIds);
 
       if (children) item = { ...item, children };
+      if (imageEntities) item = { ...item, imageEntities };
       if (item.id) item = { ...item, id: `${item.name ?? item.id}@${sn.id}` };
       // @todo fallback for tags with name as id:
       // if (item.name) item = { ...item, name: item.name + "@" + sn.id };
@@ -190,15 +210,26 @@ const _Annotation = types
       root = updateIds(sn.root.toJSON());
     }
 
-    if (user && typeof user !== "number") {
-      user = user.id;
-    }
+    const getCreatedBy = (snapshot) => {
+      if (snapshot.type === "prediction") {
+        const modelVersion = snapshot.model_version?.trim() ?? "";
+        return modelVersion || "Admin";
+      }
+
+      return snapshot.createdBy ?? "Admin";
+    };
+
+    const getCreatedAt = (snapshot) => {
+      return snapshot.draft_created_at ?? snapshot.created_at ?? snapshot.createdDate;
+    };
 
     return {
       ...sn,
       ...(isFF(FF_DEV_3391) ? { root } : {}),
       user,
       editable: sn.editable ?? sn.type === "annotation",
+      createdBy: getCreatedBy(sn),
+      createdDate: getCreatedAt(sn),
       ground_truth: sn.honeypot ?? sn.ground_truth ?? false,
       skipped: sn.skipped || sn.was_cancelled,
       acceptedState: sn.accepted_state ?? sn.acceptedState ?? null,
@@ -474,6 +505,12 @@ const _Annotation = types
       self.regionStore.clearSelection();
     },
 
+    lockSelectedRegions() {
+      self.selectedRegions.forEach((region) => {
+        region.setLocked(!region.locked);
+      });
+    },
+
     hideSelectedRegions() {
       self.selectedRegions.forEach((region) => {
         region.toggleHidden();
@@ -660,12 +697,12 @@ const _Annotation = types
 
       self.names.forEach((tag) => tag.needsUpdate && tag.needsUpdate());
       self.updateAppearenceFromState();
-      if (isFF(FF_DEV_2432)) {
-        const areas = Array.from(self.areas.values());
-        const filtered = areas.filter((area) => area.isDrawing);
+      const areas = Array.from(self.areas.values());
+      // It should find just one unfinished region, but just in case we work with array
+      const filtered = areas.filter((area) => area.isDrawing);
 
-        self.regionStore.selection._updateResultsFromRegions(filtered);
-      }
+      // Update UI to reflect the state of an unfinished region in case if it exists
+      if (filtered.length) self.regionStore.selection._updateResultsFromRegions(filtered);
     },
     updateAppearenceFromState() {
       self.areas.forEach((area) => area.updateAppearenceFromState?.());
@@ -1032,6 +1069,8 @@ const _Annotation = types
     // And this problems are fixable, so better to fix them on start
     fixBrokenAnnotation(json) {
       return (json ?? []).reduce((res, objRaw) => {
+        if (!objRaw) return res;
+
         const obj = structuredClone(objRaw) ?? {};
 
         if (obj.type === "relation") {
@@ -1047,34 +1086,8 @@ const _Annotation = types
         if (obj.type.endsWith("labels")) {
           const keys = Object.keys(obj.value);
 
-          for (let key of keys) {
+          for (const key of keys) {
             if (key.endsWith("labels")) {
-              const hasControlTag = tagNames.has(obj.from_name) || tagNames.has("labels");
-
-              // remove non-existent labels, it actually breaks dynamic labels
-              // and makes no reason overall — labels from predictions can be out of config
-              if (!isFF(FF_LSDV_4988) && hasControlTag) {
-                const labelsContainer = tagNames.get(obj.from_name) ?? tagNames.get("labels");
-                const value = obj.value[key];
-
-                if (value && value.length && labelsContainer.type.endsWith("labels")) {
-                  const filteredValue = value.filter((labelName) => !!labelsContainer.findLabel(labelName));
-                  const oldKey = key;
-
-                  key = key === labelsContainer.type ? key : labelsContainer.type;
-
-                  if (oldKey !== key) {
-                    obj.type = key;
-                    obj.value[key] = obj.value[oldKey];
-                    delete obj.value[oldKey];
-                  }
-
-                  if (filteredValue.length !== value.length) {
-                    obj.value[key] = filteredValue;
-                  }
-                }
-              }
-
               // detect most relevant label tags if that one from from_name is missing
               // can be useful for predictions in old format with config in new format:
               // Rectangle + Labels -> RectangleLabels

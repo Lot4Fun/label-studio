@@ -1,13 +1,13 @@
 import { observer } from "mobx-react";
 import { Fragment } from "react";
-import { FaTrash } from "react-icons/fa";
 import { BemWithSpecifiContext } from "../../../utils/bem";
-import { Button } from "../../Common/Button/Button";
-import { Icon } from "../../Common/Icon/Icon";
+import { Button } from "@humansignal/ui";
+import { IconClose } from "@humansignal/icons";
 import { Tag } from "../../Common/Tag/Tag";
 import { FilterDropdown } from "../FilterDropdown";
 import "./FilterLine.scss";
 import { FilterOperation } from "./FilterOperation";
+import { Icon } from "../../Common/Icon/Icon";
 
 const { Block, Elem } = BemWithSpecifiContext();
 
@@ -49,6 +49,13 @@ export const FilterLine = observer(({ filter, availableFilters, index, view, sid
             width={80}
             dropdownWidth={120}
             dropdownClassName={dropdownClassName}
+            // Search on filter.title instead of filter.id
+            searchFilter={(option, query) => {
+              const original = option?.original ?? option;
+              const title = original?.field?.title ?? original?.title ?? "";
+              const parentTitle = original?.field?.parent?.title ?? "";
+              return `${title} ${parentTitle}`.toLowerCase().includes(query.toLowerCase());
+            }}
             onChange={(value) => filter.setFilterDelayed(value)}
             optionRender={({ item: { original: filter } }) => (
               <Elem name="selector">
@@ -60,20 +67,29 @@ export const FilterLine = observer(({ filter, availableFilters, index, view, sid
                 )}
               </Elem>
             )}
+            disabled={filter.field.disabled}
           />
         </Elem>
       </GroupWrapper>
       <GroupWrapper wrap={sidebar}>
-        <FilterOperation filter={filter} value={filter.currentValue} operator={filter.operator} field={filter.field} />
+        <FilterOperation
+          filter={filter}
+          value={filter.currentValue}
+          operator={filter.operator}
+          field={filter.field}
+          disabled={filter.field.disabled}
+        />
       </GroupWrapper>
       <Elem name="remove">
         <Button
-          type="link"
+          look="string"
+          size="smaller"
           onClick={(e) => {
             e.stopPropagation();
             filter.delete();
           }}
-          icon={<Icon icon={FaTrash} size={12} />}
+          disabled={filter.field.disabled}
+          icon={<Icon icon={IconClose} size={12} />}
         />
       </Elem>
     </Block>

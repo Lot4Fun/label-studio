@@ -1,6 +1,7 @@
 import type { FC, MouseEvent } from "react";
 import type { ViewTypes } from "./Views";
 import type * as Controls from "./SideControls";
+import type { SpectrogramScale } from "../../lib/AudioUltra/Analysis/FFTProcessor";
 
 export type TimelineControls = Partial<Record<keyof typeof Controls, boolean>> & {
   ZoomControl: boolean;
@@ -31,6 +32,7 @@ export interface TimelineProps<D extends ViewTypes = "frames"> {
   controlsOnTop?: boolean;
   controls?: TimelineControls;
   customControls?: TimelineCustomControls[];
+  readonly?: boolean;
   onReady?: (data: Record<string, any>) => void;
   onPlay?: () => void;
   onPause?: () => void;
@@ -40,8 +42,8 @@ export interface TimelineProps<D extends ViewTypes = "frames"> {
   onToggleVisibility?: (id: string, visibility: boolean) => void;
   onAddRegion?: (region: Record<string, any>) => any;
   onDeleteRegion?: (id: string) => void;
-  onStartDrawing?: (frame: number) => void;
-  onFinishDrawing?: () => void;
+  onStartDrawing?: (options: { frame: number; region?: string }) => MSTTimelineRegion | undefined;
+  onFinishDrawing?: (options: { mode?: "new" | "edit" }) => void;
   onZoom?: (zoom: number) => void;
   onSelectRegion?: (event: MouseEvent<HTMLDivElement>, id: string, select?: boolean) => void;
   onAction?: (event: MouseEvent, action: string, data?: any) => void;
@@ -83,6 +85,14 @@ export interface TimelineViewProps {
   onSpeedChange?: TimelineProps["onSpeedChange"];
 }
 
+// Full region stored in MST store
+export interface MSTTimelineRegion {
+  id: string;
+  ranges: { start: number; end: number }[];
+  object: { length: number }; // Video tag
+  setRange: (range: [number, number], options?: { mode?: "new" | "edit" }) => void;
+}
+
 export interface TimelineRegion {
   id: string;
   index?: number;
@@ -93,6 +103,7 @@ export interface TimelineRegion {
   sequence: TimelineRegionKeyframe[];
   /** is this timeline region with spans */
   timeline?: boolean;
+  locked?: boolean;
 }
 
 export interface TimelineRegionKeyframe {
@@ -111,6 +122,7 @@ export interface TimelineContextValue {
   settings?: TimelineSettings;
   changeSetting?: (key: string, value: any) => void;
   data?: any;
+  readonly?: boolean;
 }
 
 export interface TimelineMinimapProps {
@@ -134,6 +146,15 @@ export type TimelineSettings = {
   leftOffset?: number;
   loopRegion?: boolean;
   autoPlayNewSegments?: boolean;
+
+  spectrogramFftSamples?: number;
+  spectrogramWindowingFunction?: "hanning" | "hamming" | "blackman" | "sine";
+  spectrogramColorScheme?: string;
+  numberOfMelBands?: number;
+  spectrogramMinDb?: number;
+  spectrogramMaxDb?: number;
+  spectrogramVisible?: boolean;
+  spectrogramScale?: SpectrogramScale;
 };
 
 export type TimelineStepFunction = (
@@ -191,6 +212,10 @@ export interface TimelineControlsProps {
   onSpeedChange?: TimelineProps["onSpeedChange"];
   onZoom?: TimelineProps["onZoom"];
   onAmpChange?: (amp: number) => void;
+  onSpectrogramFftSamplesChange?: (samples: number) => void;
+  onNumberOfMelBandsChange?: (bands: number) => void;
+  onSpectrogramWindowingFunctionChange?: (windowFunction: string) => void;
+  onSpectrogramColorSchemeChange?: (colorScheme: string) => void;
   toggleVisibility?: (layerName: string, isVisible: boolean) => void;
 }
 

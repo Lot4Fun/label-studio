@@ -1,73 +1,73 @@
-import { useCallback, useContext, useEffect, useState } from "react";
-import { Button, Columns } from "../../../components";
+import { useCallback, useContext } from "react";
+import { Columns } from "../../../components";
+import { Button } from "@humansignal/ui";
 import { confirm, modal } from "../../../components/Modal/Modal";
 import { Spinner } from "../../../components/Spinner/Spinner";
 import { ApiContext } from "../../../providers/ApiProvider";
-import { useProject } from "../../../providers/ProjectProvider";
+import { projectAtom } from "../../../providers/ProjectProvider";
 import { StorageCard } from "./StorageCard";
 import { StorageForm } from "./StorageForm";
+import { useAtomValue } from "jotai";
+import { useStorageCard } from "./hooks/useStorageCard";
+import { ff } from "@humansignal/core";
+import { StorageProviderForm } from "@humansignal/app-common/blocks/StorageProviderForm";
+import { providers } from "./providers";
 
 export const StorageSet = ({ title, target, rootClass, buttonLabel }) => {
   const api = useContext(ApiContext);
-  const { project } = useProject();
-  const [storages, setStorages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [storageTypes, setStorageTypes] = useState([]);
+  const project = useAtomValue(projectAtom);
+  const storageTypesQueryKey = ["storage-types", target];
+  const storagesQueryKey = ["storages", target, project?.id];
+  const useNewStorageScreen = ff.isActive(ff.FF_NEW_STORAGES);
 
-  useEffect(() => {
-    api
-      .callApi("storageTypes", {
-        params: {
-          target,
-        },
-      })
-      .then((types) => {
-        setStorageTypes(types ?? []);
-      });
-  }, []);
-
-  const fetchStorages = useCallback(async () => {
-    if (!project.id) {
-      console.warn("Project ID not provided");
-      return;
-    }
-
-    setLoading(true);
-    const result = await api.callApi("listStorages", {
-      params: {
-        project: project.id,
-        target,
-      },
-    });
-
-    const storageTypes = await api.callApi("storageTypes", {
-      params: {
-        target,
-      },
-    });
-
-    setStorageTypes(storageTypes);
-
-    if (result !== null) {
-      setStorages(result);
-      setLoaded(true);
-    }
-
-    setLoading(false);
-  }, [project]);
+  const {
+    storageTypes,
+    storageTypesLoading,
+    storageTypesLoaded,
+    reloadStorageTypes,
+    storages,
+    storagesLoading,
+    storagesLoaded,
+    reloadStoragesList,
+    loading,
+    loaded,
+    fetchStorages,
+  } = useStorageCard(target, project?.id);
 
   const showStorageFormModal = useCallback(
     (storage) => {
-      const action = storage ? "Edit" : "Add";
+      const action = storage ? "Edit" : "Connect";
       const actionTarget = target === "export" ? "Target" : "Source";
       const title = `${action} ${actionTarget} Storage`;
 
       const modalRef = modal({
         title,
         closeOnClickOutside: false,
-        style: { width: 760 },
-        body: (
+        style: { width: 960 },
+        bare: useNewStorageScreen,
+        onHidden: () => {
+          // Reset state when modal is closed (including Escape key)
+          // This ensures clean state for next modal open
+        },
+        body: useNewStorageScreen ? (
+          <StorageProviderForm
+            title={title}
+            target={target}
+            storage={storage}
+            project={project.id}
+            rootClass={rootClass}
+            storageTypes={storageTypes}
+            providers={providers}
+            onSubmit={async () => {
+              modalRef.close();
+              fetchStorages();
+            }}
+            onHide={() => {
+              // This will be called when the modal is closed via Escape key
+              // The state reset is handled inside StorageProviderForm
+            }}
+          />
+        ) : (
           <StorageForm
             target={target}
             storage={storage}
@@ -79,13 +79,6 @@ export const StorageSet = ({ title, target, rootClass, buttonLabel }) => {
               modalRef.close();
             }}
           />
-        ),
-        footer: (
-          <>
-            Save completed annotations to Amazon S3, Google Cloud, Microsoft Azure, or Redis.
-            <br />
-            <a href="https://labelstud.io/guide/storage.html">See more in the documentation</a>.
-          </>
         ),
       });
     },
@@ -121,22 +114,20 @@ export const StorageSet = ({ title, target, rootClass, buttonLabel }) => {
     [fetchStorages],
   );
 
-  useEffect(() => {
-    fetchStorages();
-  }, [fetchStorages]);
-
   return (
     <Columns.Column title={title}>
       <div className={rootClass.elem("controls")}>
-        <Button onClick={() => showStorageFormModal()}>{buttonLabel}</Button>
+        <Button onClick={() => showStorageFormModal()} disabled={loading} look="outlined" aria-label="Add storage">
+          {buttonLabel}
+        </Button>
       </div>
 
       {loading && !loaded ? (
         <div className={rootClass.elem("empty")}>
           <Spinner size={32} />
         </div>
-      ) : storages.length === 0 ? null : (
-        storages.map((storage) => (
+      ) : storagesLoaded && storages.length === 0 ? null : (
+        storages?.map?.((storage) => (
           <StorageCard
             key={storage.id}
             storage={storage}

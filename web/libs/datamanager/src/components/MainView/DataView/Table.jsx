@@ -1,10 +1,9 @@
 import { inject } from "mobx-react";
 import { getRoot } from "mobx-state-tree";
 import { useCallback, useMemo } from "react";
-import { FaQuestionCircle } from "react-icons/fa";
 import { useShortcut } from "../../../sdk/hotkeys";
 import { Block, Elem } from "../../../utils/bem";
-import { FF_DEV_2536, FF_LOPS_86, FF_OPTIC_2, isFF } from "../../../utils/feature-flags";
+import { FF_DEV_2536, isFF } from "../../../utils/feature-flags";
 import * as CellViews from "../../CellViews";
 import { Icon } from "../../Common/Icon/Icon";
 import { ImportButton } from "../../Common/SDKButtons";
@@ -12,9 +11,10 @@ import { Spinner } from "../../Common/Spinner";
 import { Table } from "../../Common/Table/Table";
 import { Tag } from "../../Common/Tag/Tag";
 import { Tooltip } from "@humansignal/ui";
+import { IconQuestionOutline } from "@humansignal/icons";
 import { GridView } from "../GridView/GridView";
 import "./Table.scss";
-import { Button } from "../../Common/Button/Button";
+import { Button } from "@humansignal/ui";
 import { useState } from "react";
 import { useEffect } from "react";
 
@@ -99,7 +99,7 @@ export const DataView = injector(
       if (help && decoration?.help !== false) {
         children.push(
           <Tooltip key="help-tooltip" title={help}>
-            <Icon icon={FaQuestionCircle} style={{ opacity: 0.5 }} />
+            <Icon icon={IconQuestionOutline} style={{ opacity: 0.5 }} />
           </Tooltip>,
         );
       }
@@ -120,7 +120,7 @@ export const DataView = injector(
         } else if (e.metaKey || e.ctrlKey) {
           window.open(`./?task=${itemID}`, "_blank");
         } else {
-          if (isFF(FF_OPTIC_2)) store._sdk.lsf?.saveDraft();
+          store._sdk.lsf?.saveDraft();
           getRoot(view).startLabeling(item);
         }
       },
@@ -142,20 +142,7 @@ export const DataView = injector(
               <Elem name="title" tag="h3">
                 Failed to sync data
               </Elem>
-              {isFF(FF_LOPS_86) ? (
-                <>
-                  <Elem name="text">Check your storage settings and resync to import records</Elem>
-                  <Button
-                    onClick={async () => {
-                      window.open("./settings/storage");
-                    }}
-                  >
-                    Manage Storage
-                  </Button>
-                </>
-              ) : (
-                <Elem name="text">Check your storage settings. You may need to recreate this dataset</Elem>
-              )}
+              <Elem name="text">Check your storage settings. You may need to recreate this dataset</Elem>
             </Block>
           );
         }
@@ -181,6 +168,8 @@ export const DataView = injector(
               </Elem>
               <Elem name="text">Press the button below to see any synced records</Elem>
               <Button
+                size="small"
+                look="outlined"
                 onClick={async () => {
                   await store.fetchProject({ force: true, interaction: "refresh" });
                   await store.currentView?.reload();
@@ -206,7 +195,7 @@ export const DataView = injector(
               </Elem>
               {!hasData && !!store.interfaces.get("import") && (
                 <Elem name="navigation">
-                  <ImportButton look="primary" href="./import">
+                  <ImportButton variant="primary" look="filled" href="./import">
                     Go to import
                   </ImportButton>
                 </Elem>

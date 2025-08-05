@@ -18,7 +18,8 @@ const TimelineComponent: FC<TimelineProps> = ({
   length = 1024,
   position = 1,
   framerate = 24,
-  hopSize = 1,
+  altHopSize = 1,
+  hopSize = altHopSize,
   playing = false,
   fullscreen = false,
   disableView = false,
@@ -31,6 +32,7 @@ const TimelineComponent: FC<TimelineProps> = ({
   speed,
   className,
   formatPosition,
+  readonly = false,
   ...props
 }) => {
   const View = Views[mode];
@@ -105,8 +107,9 @@ const TimelineComponent: FC<TimelineProps> = ({
       seekOffset,
       settings: View.settings,
       visibleWidth: seekVisibleWidth,
+      readonly,
     }),
-    [position, seekOffset, seekVisibleWidth, length, regions, step, playing, View.settings, data],
+    [position, seekOffset, seekVisibleWidth, length, regions, step, playing, View.settings, data, readonly],
   );
 
   useEffect(() => {
@@ -128,7 +131,7 @@ const TimelineComponent: FC<TimelineProps> = ({
         playing={playing}
         volume={props.volume}
         controls={props.controls}
-        altHopSize={props.altHopSize}
+        altHopSize={altHopSize}
         customControls={props.customControls}
         collapsed={viewCollapsed}
         onPlay={() => handlers.onPlay?.()}
@@ -202,8 +205,8 @@ const TimelineComponent: FC<TimelineProps> = ({
         onAddRegion={(reg) => handlers.onAddRegion?.(reg)}
         onDeleteRegion={(id) => handlers.onDeleteRegion?.(id)}
         onSelectRegion={(e, id, select) => handlers.onSelectRegion?.(e, id, select)}
-        onStartDrawing={(frame) => handlers.onStartDrawing?.(frame)}
-        onFinishDrawing={() => handlers.onFinishDrawing?.()}
+        onStartDrawing={(options) => handlers.onStartDrawing?.(options)}
+        onFinishDrawing={(options) => handlers.onFinishDrawing?.(options)}
         onSpeedChange={(speed) => handlers.onSpeedChange?.(speed)}
         onZoom={props.onZoom}
       />

@@ -9,7 +9,7 @@ from core.utils.common import load_func, retry_database_locked
 from core.utils.db import fast_first
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from drf_yasg import openapi
+from drf_spectacular.utils import extend_schema_field
 from projects.models import Project
 from rest_flex_fields import FlexFieldsModelSerializer
 from rest_framework import generics, serializers
@@ -18,7 +18,7 @@ from rest_framework.fields import SkipField
 from rest_framework.serializers import ModelSerializer
 from rest_framework.settings import api_settings
 from tasks.exceptions import AnnotationDuplicateError
-from tasks.models import Annotation, AnnotationDraft, Prediction, Task
+from tasks.models import Annotation, AnnotationDraft, Prediction, PredictionMeta, Task
 from tasks.validation import TaskValidator
 from users.models import User
 from users.serializers import UserSerializer
@@ -31,32 +31,36 @@ class PredictionQuerySerializer(serializers.Serializer):
     project = serializers.IntegerField(required=False, help_text='Project ID to filter predictions')
 
 
+@extend_schema_field(
+    {
+        'type': 'array',
+        'title': 'Prediction result list',
+        'description': 'List of prediction results for the task',
+        'items': {
+            'type': 'object',
+            'title': 'Prediction result items (regions)',
+            'description': 'List of predicted regions for the task',
+        },
+    }
+)
 class PredictionResultField(serializers.JSONField):
-    class Meta:
-        swagger_schema_fields = {
-            'type': openapi.TYPE_ARRAY,
-            'title': 'Prediction result list',
-            'description': 'List of prediction results for the task',
-            'items': {
-                'type': openapi.TYPE_OBJECT,
-                'title': 'Prediction result items (regions)',
-                'description': 'List of predicted regions for the task',
-            },
-        }
+    pass
 
 
+@extend_schema_field(
+    {
+        'type': 'array',
+        'title': 'Annotation result list',
+        'description': 'List of annotation results for the task',
+        'items': {
+            'type': 'object',
+            'title': 'Annotation result items (regions)',
+            'description': 'List of annotated regions for the task',
+        },
+    }
+)
 class AnnotationResultField(serializers.JSONField):
-    class Meta:
-        swagger_schema_fields = {
-            'type': openapi.TYPE_ARRAY,
-            'title': 'Annotation result list',
-            'description': 'List of annotation results for the task',
-            'items': {
-                'type': openapi.TYPE_OBJECT,
-                'title': 'Annotation result items (regions)',
-                'description': 'List of annotated regions for the task',
-            },
-        }
+    pass
 
 
 class PredictionSerializer(ModelSerializer):
@@ -120,7 +124,7 @@ class AnnotationSerializer(FlexFieldsModelSerializer):
 
         return data
 
-    def get_created_username(self, annotation):
+    def get_created_username(self, annotation) -> str:
         user = annotation.completed_by
         if not user:
             return ''
@@ -176,7 +180,10 @@ class BaseTaskSerializer(FlexFieldsModelSerializer):
 
     def validate(self, task):
         instance = self.instance if hasattr(self, 'instance') else None
-        validator = TaskValidator(self.project(), instance)
+        validator = TaskValidator(
+            self.project(task=instance),
+            instance=instance if 'data' not in task else None,
+        )
         return validator.validate(task)
 
     def to_representation(self, instance):
@@ -729,6 +736,15 @@ class TaskIDOnlySerializer(ModelSerializer):
     class Meta:
         model = Task
         fields = ['id']
+
+
+class PredictionMetaSerializer(ModelSerializer):
+    """Serializer for PredictionMeta model"""
+
+    class Meta:
+        model = PredictionMeta
+        fields = '__all__'
+        read_only_fields = ['prediction', 'failed_prediction']
 
 
 # LSE inherits this serializer
