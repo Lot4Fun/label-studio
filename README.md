@@ -89,7 +89,7 @@ If you do not have a static IP address, you must create an entry in your hosts f
 ### Install locally with pip
 
 ```bash
-# Requires Python >=3.8
+# Requires Python >=3.10
 pip install label-studio
 
 # Start the server at http://localhost:8080

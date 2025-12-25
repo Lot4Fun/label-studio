@@ -4,16 +4,19 @@ These tests demonstrate how the transition system integrates with actual
 Django models and the StateManager, providing realistic usage examples.
 """
 
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 from unittest.mock import Mock, patch
 
+from core.current_request import CurrentContext
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from fsm.models import TaskState
-from fsm.registry import register_state_transition, transition_registry
+from fsm.registry import register_state_transition
 from fsm.state_choices import AnnotationStateChoices, TaskStateChoices
+from fsm.state_models import TaskState
 from fsm.transitions import BaseTransition, TransitionContext, TransitionValidationError
+from organizations.models import Organization
+from projects.models import Project
 from pydantic import Field
 
 
@@ -73,8 +76,6 @@ class DjangoModelIntegrationTests(TestCase):
         self.user.id = 123
         self.user.username = 'integration_test_user'
 
-        transition_registry.clear()
-
     @patch('fsm.registry.get_state_model_for_entity')
     @patch('fsm.state_manager.StateManager.get_current_state_object')
     @patch('fsm.state_manager.StateManager.transition_state')
@@ -98,8 +99,7 @@ class DjangoModelIntegrationTests(TestCase):
             created_by_id: int = Field(..., description='User creating the task')
             initial_priority: str = Field('normal', description='Initial task priority')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 return TaskStateChoices.CREATED
 
             def validate_transition(self, context: TransitionContext) -> bool:
@@ -125,8 +125,7 @@ class DjangoModelIntegrationTests(TestCase):
             estimated_hours: float = Field(None, ge=0.1, description='Estimated work hours')
             priority: str = Field('normal', description='Task priority')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 return TaskStateChoices.IN_PROGRESS
 
             def validate_transition(self, context: TransitionContext) -> bool:
@@ -166,8 +165,7 @@ class DjangoModelIntegrationTests(TestCase):
             completion_notes: str = Field('', description='Completion notes')
             actual_hours: float = Field(None, ge=0.0, description='Actual hours worked')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 return TaskStateChoices.COMPLETED
 
             def validate_transition(self, context: TransitionContext) -> bool:
@@ -220,7 +218,7 @@ class DjangoModelIntegrationTests(TestCase):
                 entity=self.task,
                 current_user=self.user,
                 current_state=None,
-                target_state=create_transition.target_state,
+                target_state=create_transition.get_target_state(),
             )
 
             # Validate and execute creation
@@ -245,7 +243,7 @@ class DjangoModelIntegrationTests(TestCase):
             current_user=self.user,
             current_state=TaskStateChoices.CREATED,
             current_state_object=mock_current_state,
-            target_state=assign_transition.target_state,
+            target_state=assign_transition.get_target_state(),
         )
 
         assert assign_transition.validate_transition(context) is True
@@ -268,7 +266,7 @@ class DjangoModelIntegrationTests(TestCase):
             current_user=self.user,
             current_state=TaskStateChoices.IN_PROGRESS,
             current_state_object=mock_current_state,
-            target_state=complete_transition.target_state,
+            target_state=complete_transition.get_target_state(),
         )
 
         assert complete_transition.validate_transition(context) is True
@@ -301,8 +299,7 @@ class DjangoModelIntegrationTests(TestCase):
             annotation_time_seconds: int = Field(..., ge=1, description='Time spent annotating')
             review_requested: bool = Field(True, description='Whether review is requested')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 return AnnotationStateChoices.SUBMITTED
 
             def validate_transition(self, context: TransitionContext) -> bool:
@@ -338,8 +335,7 @@ class DjangoModelIntegrationTests(TestCase):
             review_comments: str = Field('', description='Review comments')
             corrections_made: bool = Field(False, description='Whether reviewer made corrections')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 if self.reviewer_decision == 'approve':
                     return AnnotationStateChoices.COMPLETED
                 else:
@@ -392,7 +388,7 @@ class DjangoModelIntegrationTests(TestCase):
             entity=self.annotation,
             current_user=self.user,
             current_state=AnnotationStateChoices.SUBMITTED,
-            target_state=submit_transition.target_state,
+            target_state=submit_transition.get_target_state(),
         )
 
         assert submit_transition.validate_transition(context) is True
@@ -419,11 +415,11 @@ class DjangoModelIntegrationTests(TestCase):
             current_user=self.user,
             current_state=AnnotationStateChoices.SUBMITTED,
             current_state_object=mock_submission_state,
-            target_state=review_transition.target_state,
+            target_state=review_transition.get_target_state(),
         )
 
         assert review_transition.validate_transition(context) is True
-        assert review_transition.target_state == AnnotationStateChoices.COMPLETED
+        assert review_transition.get_target_state() == AnnotationStateChoices.COMPLETED
 
         review_data = review_transition.transition(context)
 
@@ -440,7 +436,7 @@ class DjangoModelIntegrationTests(TestCase):
             corrections_made=False,
         )
 
-        assert reject_transition.target_state == AnnotationStateChoices.SUBMITTED
+        assert reject_transition.get_target_state() == AnnotationStateChoices.SUBMITTED
 
         # Test validation failure
         invalid_review = ReviewAndApproveAnnotation(
@@ -473,8 +469,7 @@ class DjangoModelIntegrationTests(TestCase):
             updated_by_system: bool = Field(False, description='Whether updated by automated system')
             batch_id: str = Field(None, description='Batch operation ID')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 return self.new_status
 
             def validate_transition(self, context: TransitionContext) -> bool:
@@ -558,8 +553,7 @@ class DjangoModelIntegrationTests(TestCase):
             max_concurrent_tasks: int = Field(5, description='Max concurrent tasks per user')
             skill_requirements: list = Field(default_factory=list, description='Required skills')
 
-            @property
-            def target_state(self) -> str:
+            def get_target_state(self, context: Optional[TransitionContext] = None) -> str:
                 return TaskStateChoices.IN_PROGRESS
 
             def validate_transition(self, context: TransitionContext) -> bool:
@@ -624,7 +618,7 @@ class DjangoModelIntegrationTests(TestCase):
             entity=self.task,
             current_user=self.user,
             current_state=TaskStateChoices.CREATED,
-            target_state=valid_transition.target_state,
+            target_state=valid_transition.get_target_state(),
         )
 
         assert valid_transition.validate_transition(context) is True
@@ -659,7 +653,7 @@ class DjangoModelIntegrationTests(TestCase):
             entity=self.task,
             current_user=None,  # No user
             current_state=TaskStateChoices.CREATED,
-            target_state=valid_transition.target_state,
+            target_state=valid_transition.get_target_state(),
         )
 
         import pytest
@@ -668,3 +662,50 @@ class DjangoModelIntegrationTests(TestCase):
             valid_transition.validate_transition(context_no_user)
 
         assert 'User authentication required' in str(cm.value)
+
+
+class TestBaseStatePropertiesCoverage(TestCase):
+    """Test coverage for BaseState model properties and methods"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.user = User.objects.create(email='test_coverage@example.com')
+        self.org = Organization.objects.create(title='Test Org Coverage', created_by=self.user)
+
+        # Set CurrentContext BEFORE creating entities that need FSM
+        CurrentContext.set_user(self.user)
+        CurrentContext.set_organization_id(self.org.id)
+
+        self.project = Project.objects.create(
+            title='Test Project Coverage', created_by=self.user, organization=self.org
+        )
+
+    def tearDown(self):
+        """Clean up after tests"""
+        CurrentContext.clear()
+
+    def test_base_state_entity_property(self):
+        """Test BaseState.entity property retrieves related entity"""
+        from fsm.state_models import ProjectState
+
+        # Get the auto-created state
+        state_record = ProjectState.objects.filter(project=self.project).first()
+        assert state_record is not None
+
+        # Test entity property
+        retrieved_entity = state_record.entity
+        assert retrieved_entity.id == self.project.id
+
+    def test_base_state_timestamp_from_uuid(self):
+        """Test BaseState.timestamp_from_uuid property extracts timestamp from UUID7"""
+        from fsm.state_models import ProjectState
+
+        before = datetime.now(timezone.utc)
+        state_record = ProjectState.objects.filter(project=self.project).first()
+        datetime.now(timezone.utc)
+
+        # Test timestamp extraction
+        timestamp = state_record.timestamp_from_uuid
+        assert isinstance(timestamp, datetime)
+        # Timestamp should be within reasonable range
+        assert timestamp.year == before.year
