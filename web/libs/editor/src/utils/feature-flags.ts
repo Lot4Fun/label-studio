@@ -47,10 +47,6 @@ export const FF_DEV_3391 = "fflag_fix_front_dev_3391_interactive_view_all";
  * @link https://app.launchdarkly.com/default/production/features/fflag_fix_front_dev_1284_auto_detect_undo_281022_short
  */
 export const FF_DEV_3873 = "fflag_feat_front_dev_3873_labeling_ui_improvements_short";
-
-// Use only relative coords internally to improve performance and reduce bugs
-export const FF_DEV_3793 = "fflag_fix_front_dev_3793_relative_coords_short";
-
 /**
  * Label stream ablation experiment for solving overlap issue
  * @link https://app.launchdarkly.com/default/production/features/fflag_fix_back_dev_4174_overlap_issue_experiments_10012023_short
@@ -173,14 +169,6 @@ export const FF_IMAGE_MEMORY_USAGE = "fflag_feat_front_optic_1479_improve_image_
 
 export const FF_VIDEO_FRAME_SEEK_PRECISION = "fflag_fix_front_optic_1608_improve_video_frame_seek_precision_short";
 
-/**
- * Allows the time series component to participate in synchronized playback with other media components (like audio and video)
- * when the feature flag is enabled, while maintaining independent operation when the flag is disabled.
- *
- * @link https://app.launchdarkly.com/projects/default/flags/fflag_feat_optic_2125_timeseries_sync
- */
-export const FF_TIMESERIES_SYNC = "fflag_feat_optic_2125_timeseries_sync";
-
 Object.assign(window, {
   APP_SETTINGS: {
     ...(window.APP_SETTINGS ?? {}),
@@ -194,7 +182,7 @@ Object.assign(window, {
 function getFeatureFlags() {
   return {
     ...(window.APP_SETTINGS?.feature_flags ?? {}),
-    // could be used to explicitly set flags for testing, i.e. [FF_DEV_3793]: true
+    // could be used to explicitly set flags for testing
   };
 }
 

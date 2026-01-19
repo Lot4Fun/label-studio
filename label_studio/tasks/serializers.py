@@ -8,6 +8,7 @@ from core.feature_flags import flag_set
 from core.label_config import replace_task_data_undefined_with_config_field
 from core.utils.common import load_func, retry_database_locked
 from core.utils.db import fast_first
+from core.utils.exceptions import extract_message
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from drf_spectacular.utils import extend_schema_field
@@ -524,7 +525,9 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
                             continue
 
                     except Exception as e:
-                        validation_errors.append(f'Task {i}, prediction {j}: Error validating prediction - {str(e)}')
+                        validation_errors.append(
+                            f'Task {i}, prediction {j}: Error validating prediction - {extract_message(e)}'
+                        )
                         continue
 
                 try:
@@ -551,7 +554,9 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
                         )
                     )
                 except Exception as e:
-                    validation_errors.append(f'Task {i}, prediction {j}: Failed to create prediction - {str(e)}')
+                    validation_errors.append(
+                        f'Task {i}, prediction {j}: Failed to create prediction - {extract_message(e)}'
+                    )
                     continue
 
         # Return validation errors if they exist
@@ -668,17 +673,10 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
         prev_inner_id = last_task.inner_id if last_task else 0
         max_inner_id = (prev_inner_id + 1) if prev_inner_id else 1
 
-        calculate_is_labeled_with_distinct_annotators = flag_set(
-            'fflag_fix_fit_1082_overlap_use_distinct_annotators', user='auto'
-        )
-
         for i, task in enumerate(validated_tasks):
             cancelled_annotations = len([ann for ann in task_annotations[i] if ann.get('was_cancelled', False)])
             total_annotations = len(task_annotations[i]) - cancelled_annotations
-            if calculate_is_labeled_with_distinct_annotators:
-                current_overlap = len(set([ann.get('completed_by_id') for ann in task_annotations[i]]))
-            else:
-                current_overlap = len(task_annotations[i])
+            current_overlap = len(set([ann.get('completed_by_id') for ann in task_annotations[i]]))
             t = Task(
                 project=self.project,
                 data=task['data'],
