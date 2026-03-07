@@ -1,5 +1,5 @@
-"""This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
-"""
+"""This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license."""
+
 import base64
 import datetime
 import logging
@@ -13,7 +13,7 @@ from urllib.parse import urljoin
 
 import ujson as json
 from core.bulk_update_utils import bulk_update
-from core.current_request import get_current_request
+from core.current_request import CurrentContext, get_current_request
 from core.feature_flags import flag_set
 from core.label_config import SINGLE_VALUED_TAGS
 from core.redis import start_job_async_or_sync
@@ -566,8 +566,8 @@ class Task(TaskMixin, FsmHistoryStateModel):
         return result
 
 
-pre_bulk_create = Signal()   # providing args 'objs' and 'batch_size'
-post_bulk_create = Signal()   # providing args 'objs' and 'batch_size'
+pre_bulk_create = Signal()  # providing args 'objs' and 'batch_size'
+post_bulk_create = Signal()  # providing args 'objs' and 'batch_size'
 
 
 class AnnotationQuerySet(models.QuerySet):
@@ -620,7 +620,7 @@ class Annotation(AnnotationMixin, FsmHistoryStateModel):
         'result',
         null=True,
         default=None,
-        help_text='The main value of annotator work - ' 'labeling result in JSON format',
+        help_text='The main value of annotator work - labeling result in JSON format',
     )
 
     task = models.ForeignKey(
@@ -1151,7 +1151,6 @@ class Prediction(models.Model):
             model_run: The model run that created the prediction.
         """
         try:
-
             # given the data receive, create annotation regions in LS format
             # e.g. {"sentiment": "positive"} -> {"value": {"choices": ["positive"]}, "from_name": "", "to_name": "", ..}
             pred = PredictionValue(result=label_interface.create_regions(data)).model_dump()
@@ -1168,8 +1167,7 @@ class Prediction(models.Model):
         except Exception as exc:
             # TODO: handle exceptions better
             logger.error(
-                f'Error creating prediction for task {task_id} with {data}: {exc}. '
-                f'Traceback: {traceback.format_exc()}'
+                f'Error creating prediction for task {task_id} with {data}: {exc}. Traceback: {traceback.format_exc()}'
             )
 
     class Meta:
@@ -1550,6 +1548,9 @@ def bulk_update_stats_project_tasks(tasks, project=None):
             first_task = Task.objects.get(id=task_ids[0])
             project = first_task.project
 
+        # Set user context so FSM checks work when this runs in an async worker
+        if project.created_by_id:
+            CurrentContext.set_user(project.created_by)
         bulk_update_is_labeled(task_ids, project)
     else:
         return deprecated_bulk_update_stats_project_tasks(tasks, project)

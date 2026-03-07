@@ -18,7 +18,7 @@ import django_rq
 import rq
 import rq.exceptions
 from core.feature_flags import flag_set
-from core.redis import is_job_in_queue, is_job_on_worker, redis_connected, start_job_async_or_sync
+from core.redis import redis_connected, start_job_async_or_sync
 from core.utils.common import load_func
 from core.utils.iterators import iterate_queryset
 from data_export.serializers import ExportDataSerializer
@@ -646,29 +646,21 @@ class ImportStorage(Storage):
 
     def sync(self):
         if redis_connected():
-            queue_name = 'low'
-            queue = django_rq.get_queue(queue_name)
-            meta = {'project': self.project.id, 'storage': self.id}
-            if not is_job_in_queue(queue, 'import_sync_background', meta=meta) and not is_job_on_worker(
-                job_id=self.last_sync_job, queue_name=queue_name
-            ):
-                if not self.info_set_queued():
-                    return
-                # Use start_job_async_or_sync to automatically capture and restore CurrentContext
-                # This ensures user_id, organization_id, and request_id are available in the worker
-                sync_job = start_job_async_or_sync(
-                    import_sync_background,
-                    self.__class__,
-                    self.id,
-                    queue_name=queue_name,
-                    meta=meta,
-                    project_id=self.project.id,
-                    organization_id=self.project.organization.id,
-                    on_failure=storage_background_failure,
-                    job_timeout=settings.RQ_LONG_JOB_TIMEOUT,
-                )
-                self.info_set_job(sync_job.id)
-                logger.info(f'Storage sync background job {sync_job.id} for storage {self} has been started')
+            if not self.info_set_queued():
+                return
+            sync_job = start_job_async_or_sync(
+                import_sync_background,
+                self.__class__,
+                self.id,
+                queue_name='low',
+                meta={'project': self.project.id, 'storage': self.id},
+                project_id=self.project.id,
+                organization_id=self.project.organization.id,
+                on_failure=storage_background_failure,
+                job_timeout=settings.RQ_LONG_JOB_TIMEOUT,
+            )
+            self.info_set_job(sync_job.id)
+            logger.info(f'Storage sync background job {sync_job.id} for storage {self} has been started')
         else:
             try:
                 logger.info(f'Start syncing storage {self}')
@@ -805,7 +797,7 @@ class ExportStorage(Storage, ProjectStorageMixin):
             # Updating progress in thread requires coordinating on count and db writes, so just
             # batching to keep it simpler.
             for annotation_batch in _batched(
-                iterate_queryset(Annotation.objects.filter(project=self.project), chunk_size=chunk_size),
+                iterate_queryset(annotations, chunk_size=chunk_size),
                 chunk_size,
             ):
                 futures = []
@@ -840,13 +832,13 @@ class ExportStorage(Storage, ProjectStorageMixin):
             export_sync_fn = export_sync_background
 
         if redis_connected():
-            queue = django_rq.get_queue('low')
             if not self.info_set_queued():
                 return
-            sync_job = queue.enqueue(
+            sync_job = start_job_async_or_sync(
                 export_sync_fn,
                 self.__class__,
                 self.id,
+                queue_name='low',
                 job_timeout=settings.RQ_LONG_JOB_TIMEOUT,
                 project_id=self.project.id,
                 organization_id=self.project.organization.id,
