@@ -70,6 +70,7 @@ describe("CollectionUploader (bundle mode)", () => {
     expect(screen.getByTestId("media-card-uploaded")).toHaveAttribute("data-layout", "row");
     fireEvent.click(screen.getByLabelText("Grid view"));
     expect(screen.getByTestId("collection-uploader-grid")).toBeInTheDocument();
+    expect(screen.getByTestId("media-card-media")).toHaveAttribute("data-fit", "grid");
   });
 
   it("count chip turns positive at the minimum", () => {
@@ -138,7 +139,7 @@ describe("MediaCard row layout", () => {
     expect(card).toHaveAttribute("data-layout", "row");
     expect(screen.getByText("a.png")).toBeInTheDocument();
     expect(screen.getByText("Uploaded")).toBeInTheDocument();
-    expect(screen.getByText("Replace")).toBeInTheDocument();
-    expect(screen.getByText("Remove")).toBeInTheDocument();
+    expect(screen.getByLabelText("Replace this file")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remove this file")).toBeInTheDocument();
   });
 });

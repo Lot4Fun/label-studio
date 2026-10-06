@@ -144,7 +144,7 @@ INTERNAL_PORT = '8080'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = get_bool_env('DEBUG', True)
-DEBUG_MODAL_EXCEPTIONS = get_bool_env('DEBUG_MODAL_EXCEPTIONS', True)
+DEBUG_MODAL_EXCEPTIONS = get_bool_env('DEBUG_MODAL_EXCEPTIONS', False)
 
 # Whether to verify SSL certs when making external requests, eg in the uploader
 # ⚠️ Turning this off means assuming risk. ⚠️
@@ -161,7 +161,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DATA_DIR = get_env('BASE_DATA_DIR')
 if BASE_DATA_DIR is None:
     BASE_DATA_DIR = get_data_dir()
-os.makedirs(BASE_DATA_DIR, exist_ok=True)
+os.makedirs(BASE_DATA_DIR, mode=0o700, exist_ok=True)
 logger.info('=> Database and media directory: %s', BASE_DATA_DIR)
 
 # This indicates whether the code is running in a Continuous Integration environment.
@@ -826,6 +826,8 @@ DELETE_PREDICTIONS_POSTPROCESS = None
 PROJECT_SAVE_DIMENSIONS_POSTPROCESS = None
 FEATURE_FLAGS_GET_USER_REPR = 'core.feature_flags.utils.get_user_repr'
 FEATURE_FLAGS_GET_USER_REPR_FROM_ORGANIZATION = 'core.feature_flags.utils.get_user_repr_from_organization'
+FEATURE_FLAGS_GET_USER_REPR_FROM_ORGANIZATION_ID = 'core.feature_flags.utils.get_user_repr_from_organization_id'
+JOB_TENANCY_ENQUEUED_HOOK = None
 
 # Test factories
 ORGANIZATION_FACTORY = 'organizations.tests.factories.OrganizationFactory'
@@ -912,6 +914,13 @@ EXPORT_STORAGE_PRESIGN_TTL_MINUTES = int(get_env('EXPORT_STORAGE_PRESIGN_TTL_MIN
 EXPORT_STORAGE_PRESIGN = get_bool_env('EXPORT_STORAGE_PRESIGN', default=True)
 
 STORAGE_IN_PROGRESS_TIMER = float(get_env('STORAGE_IN_PROGRESS_TIMER', 5.0))
+# Absolute wall-clock stale timeout (seconds) for import/reimport when Redis is down
+# or RQ status is finishing/unknown. Keyed off ProjectImport/ProjectReimport.updated_at.
+# Live RQ jobs (queued/started/…) are never failed by this timer — see projects.import_health.
+IMPORT_STALE_TIMEOUT = float(get_env('IMPORT_STALE_TIMEOUT', 300.0))
+# Grace (seconds) before a CREATED row with RQ ``not found`` is marked failed — avoids
+# false fails when status is polled before Redis has registered the just-enqueued job.
+IMPORT_CREATED_NOT_FOUND_GRACE = float(get_env('IMPORT_CREATED_NOT_FOUND_GRACE', 60.0))
 STORAGE_EXPORT_CHUNK_SIZE = int(get_env('STORAGE_EXPORT_CHUNK_SIZE', 100))
 DEFAULT_STORAGE_LIST_LIMIT = int(get_env('DEFAULT_STORAGE_LIST_LIMIT', 100))
 STORAGE_EXISTED_COUNT_BATCH_SIZE = int(get_env('STORAGE_EXISTED_COUNT_BATCH_SIZE', 1000))
@@ -1032,7 +1041,6 @@ if ENABLE_CSP := get_bool_env('ENABLE_CSP', True):
         "'report-sample'",
         "'unsafe-inline'",
         'blob:',
-        'browser.sentry-cdn.com',
         'https://*.googletagmanager.com',
     )
     CSP_IMG_SRC = (
@@ -1134,3 +1142,9 @@ MIGRATION_JOB_START_DELAY_SECONDS = int(get_env('MIGRATION_JOB_START_DELAY_SECON
 # Delay (seconds) before a migration runner retries when the target import fails (stale worker
 # not yet upgraded during a rolling deploy). Short, since this is a fast retry loop.
 MIGRATION_JOB_RESCHEDULE_DELAY_SECONDS = int(get_env('MIGRATION_JOB_RESCHEDULE_DELAY_SECONDS', 30))
+
+# When an async migration waits on another AsyncMigrationStatus row, retry this often.
+MIGRATION_DEPENDENCY_RETRY_DELAY_SECONDS = int(get_env('MIGRATION_DEPENDENCY_RETRY_DELAY_SECONDS', 15 * 60))
+
+# Cap how long a dependent job waits (delay * max retries ~= 24 hours at the defaults).
+MIGRATION_DEPENDENCY_MAX_RETRIES = int(get_env('MIGRATION_DEPENDENCY_MAX_RETRIES', 96))

@@ -5,7 +5,7 @@
  * interfaces never compose or restyle it directly.
  */
 
-import { IconGrid, IconList } from "../../assets/icons";
+import { ListIcon, SquaresFourIcon } from "../../assets/icons";
 import { Button } from "../button/button";
 import { Tooltip } from "../Tooltip/Tooltip";
 import { cn } from "../../utils/utils";
@@ -74,24 +74,24 @@ export const CollectionHeader = ({
       <span className="ml-auto flex" data-testid="collection-header-view-toggle">
         <Tooltip title="Grid view">
           <Button
-            size="smaller"
+            size="small"
             look={view === "grid" ? "filled" : "string"}
             variant={view === "grid" ? "primary" : "neutral"}
             aria-label="Grid view"
             aria-pressed={view === "grid"}
             onClick={() => onViewChange("grid")}
-            icon={<IconGrid />}
+            icon={<SquaresFourIcon />}
           />
         </Tooltip>
         <Tooltip title="List view">
           <Button
-            size="smaller"
+            size="small"
             look={view === "list" ? "filled" : "string"}
             variant={view === "list" ? "primary" : "neutral"}
             aria-label="List view"
             aria-pressed={view === "list"}
             onClick={() => onViewChange("list")}
-            icon={<IconList />}
+            icon={<ListIcon />}
           />
         </Tooltip>
       </span>

@@ -19,7 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { IconUploadOutline } from "../../assets/icons";
+import { CloudArrowUpIcon } from "../../assets/icons";
 import { Button } from "../button/button";
 import { cn } from "../../utils/utils";
 import { EmptyState } from "../empty-state/empty-state";
@@ -194,7 +194,7 @@ export const CollectionUploader = ({
   // follow the CHILDREN, not just the slot count — a fully-rejected first pick
   // still replaces the dropzone with its rejected card.
   const hasCards = Children.count(children) > 0;
-  const showDropzone = !bundleMode || (fileCount === 0 && !hasCards);
+  const showDropzone = fileCount === 0 && !hasCards;
 
   return (
     <div className={cn("flex flex-col gap-tight", className)} data-testid="collection-uploader">
@@ -253,7 +253,7 @@ export const CollectionUploader = ({
           <EmptyState
             size="small"
             variant={highlighted ? "primary" : "neutral"}
-            icon={<IconUploadOutline />}
+            icon={<CloudArrowUpIcon />}
             title="Drag & drop or click to browse"
             description={hint}
             additionalContent={
@@ -265,10 +265,10 @@ export const CollectionUploader = ({
         </div>
       ) : null}
 
-      {bundleMode && (fileCount > 0 || hasCards) ? (
+      {fileCount > 0 || hasCards ? (
         <div
           className={
-            view === "grid"
+            bundleMode && view === "grid"
               ? // One card per row on phone-sized viewports (767px is the
                 // platform mobile breakpoint), two side by side from md up.
                 "grid grid-cols-1 gap-tight md:grid-cols-2"
@@ -284,8 +284,9 @@ export const CollectionUploader = ({
         >
           {Children.map(children, (child) =>
             isValidElement(child)
-              ? cloneElement(child as React.ReactElement<{ layout?: string }>, {
-                  layout: view === "list" ? "row" : "card",
+              ? cloneElement(child as React.ReactElement<{ layout?: string; fit?: string }>, {
+                  layout: bundleMode && view === "list" ? "row" : "card",
+                  fit: bundleMode && view === "grid" ? "grid" : "natural",
                 })
               : child,
           )}

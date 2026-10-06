@@ -86,6 +86,14 @@ export const FF_UTC_428_CONSENSUS_CONTROL_TAG_AGREEMENT = "fflag_utc_428_consens
 export const FF_UTC_1012_ADD_OR_MODIFY_COLUMNS = "fflag_utc_1012_add_or_modify_columns";
 
 /**
+ * Reusable organization members filtering engine.
+ */
+export const FF_UTC_1206_REUSEABLE_MEMBERS_FILTERING = "fflag_utc_1206_reuseable_members_filtering";
+
+/** Replace the existing table filter bar with FilterShell (UTC-1166). */
+export const FF_UTC_1166_FILTER_SHELL = "fflag_utc_1166_filter_shell";
+
+/**
  * FSM State Fields
  */
 export const FF_FSM_STATE_FIELDS = "fflag_feat_fit_710_fsm_state_fields";
@@ -191,6 +199,17 @@ export const FF_INTERFACES = "fflag_feat_all_optic_interfaces_short";
 export const FF_INTERFACES_AGENT_WORKFLOW = "fflag_feat_interfaces_agent_workflow";
 
 /**
+ * In-browser interface interaction tests (scenarios.js, Tests tab, agent scenario tools).
+ * Requires FF_INTERFACES; when off, the Create Interface agent does not author or run tests.
+ */
+export const FF_INTERFACES_SCENARIOS = "fflag_feat_interfaces_scenarios";
+
+/**
+ * Dynamic Interface Components (e.g. AudioCanvas) and component-level skills/hotkeys for Custom Interfaces.
+ */
+export const FF_INTERFACES_COMPONENTS = "fflag_interfaces_components";
+
+/**
  * WASM FFmpeg Streaming Decoder (progressive seek/decode) for long compressed audio files
  */
 export const FF_FIT_2003_WASM_STREAMING_DECODER = "fflag_feat_front_fit_2003_wasm_streaming_decoder";
@@ -213,6 +232,12 @@ export const FF_UTC_950_FIREWALL = "fflag_feat_utc_950_annotator_reviewer_firewa
  * page (cards/table) under the public description.
  */
 export const FF_LSE_PROJECT_INTERNAL_DESCRIPTION = "fflag_feat_lse_project_internal_description_short";
+
+/**
+ * Project Settings: Managers+ default Data Manager column visibility and order
+ * for the main grid (FIT-2808 / FIT-2845).
+ */
+export const FF_PROJECT_DM_COLUMN_DEFAULTS = "fflag_feat_all_fit_2808_project_dm_column_defaults";
 
 /**
  * Vertical annotations sidebar with filtering and resizable column in labeling UI.
@@ -290,3 +315,19 @@ export const FF_REJECT_REDISTRIBUTE = "fflag_feat_utc_1178_reject_requeue_other_
  * frontend checks it with an explicit ``false`` default rather than the app-wide flag default.
  */
 export const FF_MANUAL_BATCHES = "fflag_feat_utc_1260_manual_batches_short";
+
+/**
+ * Azure SPI secretless authentication: auth_mode=workload_identity uses constrained
+ * DefaultAzureCredential (workload identity + managed identity only). Default off.
+ */
+export const FF_AZURE_SPI_WORKLOAD_IDENTITY = "fflag_feat_back_fit_2608_azure_spi_workload_identity_short";
+
+/**
+ * Persist Data Manager column drag-order on the shared tab (like visibility) and
+ * disable the personal browser key `dm:columnorder`. Independent of FIT-2808
+ * project defaults (`FF_PROJECT_DM_COLUMN_DEFAULTS`). FIT-2882.
+ */
+export const FF_DM_SHARED_COLUMN_ORDER = "fflag_feat_fit_2882_dm_shared_column_order";
+
+/** Owner/Administrator "Close account" button in the Organization → Members drawer. UTC-1373. */
+export const FF_UTC_1373_USER_REMOVAL_ORG_PAGE = "fflag_feat_utc1373_user_removal_org_page";

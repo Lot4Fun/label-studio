@@ -11,6 +11,7 @@ import socket
 import sys
 from contextlib import contextmanager
 from tempfile import mkdtemp, mkstemp
+from urllib.parse import urlparse
 
 import requests
 import ujson as json
@@ -21,7 +22,7 @@ from django.core.files.temp import NamedTemporaryFile
 from requests.adapters import HTTPAdapter
 from urllib3.connection import HTTPConnection, HTTPSConnection
 from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
-from urllib3.exceptions import ConnectTimeoutError, NameResolutionError, NewConnectionError
+from urllib3.exceptions import ConnectTimeoutError, LocationParseError, NameResolutionError, NewConnectionError
 from urllib3.util import connection as urllib3_connection
 from urllib3.util import parse_url
 
@@ -92,7 +93,7 @@ def get_config_dir():
 
 def get_data_dir():
     data_dir = user_data_dir(appname=_DIR_APP_NAME)
-    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(data_dir, mode=0o700, exist_ok=True)
     return data_dir
 
 
@@ -191,7 +192,10 @@ def validate_url_for_ssrf(url, block_local_urls=True):
     :param block_local_urls: Whether urls that resolve to local/private networks should be allowed.
     """
 
-    parsed_url = parse_url(url)
+    try:
+        parsed_url = parse_url(url)
+    except LocationParseError:
+        raise SsrfBlockedUrlError
 
     if parsed_url.scheme not in ('http', 'https'):
         raise SsrfBlockedUrlError
@@ -211,6 +215,26 @@ def validate_url_for_ssrf(url, block_local_urls=True):
 def validate_upload_url(url, block_local_urls=True):
     """Backward-compatible wrapper around validate_url_for_ssrf."""
     return validate_url_for_ssrf(url, block_local_urls=block_local_urls)
+
+
+def resolve_host_for_ssrf(host: str, port=None) -> str:
+    """Resolve a host once for non-HTTP clients and return an address that passed validate_ip().
+
+    The caller must connect to the returned address, not to the hostname, so no second
+    DNS lookup can redirect the connection to a banned network.
+    """
+    try:
+        addr_infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    except socket.gaierror:
+        from core.utils.exceptions import LabelStudioAPIException
+
+        raise LabelStudioAPIException(f"Can't resolve hostname {host}")
+
+    # A rebinding host can return several records; reject if any is banned.
+    for addr_info in addr_infos:
+        validate_ip(addr_info[4][0])
+
+    return addr_infos[0][4][0]
 
 
 def validate_ip(ip: str) -> None:
@@ -341,11 +365,17 @@ class SsrfSafeHTTPAdapter(HTTPAdapter):
         self.poolmanager.pool_classes_by_scheme = _SSRF_GUARDED_POOL_CLASSES
 
 
-def ssrf_safe_session(max_retries=0) -> requests.Session:
+def ssrf_safe_session(max_retries=0, trusted_origin=None) -> requests.Session:
+    """Session whose connections refuse banned addresses, except to ``trusted_origin`` (scheme://host[:port])."""
     session = requests.Session()
     adapter = SsrfSafeHTTPAdapter(max_retries=max_retries)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
+    if trusted_origin:
+        parsed = urlparse(trusted_origin)
+        # Label Studio's own host may resolve to a private address on self-hosted installs;
+        # the trailing slash keeps app.example.com.evil.com from matching the prefix
+        session.mount(f'{parsed.scheme}://{parsed.netloc}/', HTTPAdapter(max_retries=max_retries))
     return session
 
 

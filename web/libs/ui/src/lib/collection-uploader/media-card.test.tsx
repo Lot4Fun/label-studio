@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MediaCard } from "./media-card";
 
 const FILE = { name: "IMG_9180.mov", size: 16_497_221, contentType: "video/quicktime" };
@@ -25,6 +25,39 @@ describe("MediaCard", () => {
     expect(screen.getByText("Remove")).toBeInTheDocument();
   });
 
+  it("the duplicate verdict renders a warning chip in both layouts", () => {
+    const { rerender } = render(
+      <MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" duplicate="exact" />,
+    );
+    expect(screen.getByText("Duplicate")).toBeInTheDocument();
+    rerender(<MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" duplicate="exact" layout="row" />);
+    expect(screen.getByText("Duplicate")).toBeInTheDocument();
+    rerender(<MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" layout="row" />);
+    expect(screen.queryByText("Duplicate")).not.toBeInTheDocument();
+  });
+
+  it("grid fit locks the media to a square box from the two-column breakpoint; natural fit does not", () => {
+    const { rerender } = render(<MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" fit="grid" />);
+    const media = screen.getByTestId("media-card-media");
+    expect(media.className).toContain("md:aspect-square");
+    expect(media.querySelector("video")?.className).toContain("md:h-full");
+    rerender(<MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" />);
+    expect(media.className).not.toContain("md:aspect-square");
+    expect(media.querySelector("video")?.className).not.toContain("md:h-full");
+  });
+
+  it("offers Open full size for previewable media and opens the viewer", async () => {
+    render(<MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open full size" }));
+    expect(await screen.findByRole("dialog", { name: FILE.name })).toBeInTheDocument();
+    expect(screen.getByTestId("media-card-viewer")).toBeInTheDocument();
+  });
+
+  it("has no Open full size without a preview", () => {
+    render(<MediaCard state="submitted" file={FILE} kind="video" />);
+    expect(screen.queryByRole("button", { name: "Open full size" })).toBeNull();
+  });
+
   it("uploading state shows progress chip and only Cancel", () => {
     render(
       <MediaCard
@@ -45,8 +78,18 @@ describe("MediaCard", () => {
     expect(screen.queryByText("Remove")).not.toBeInTheDocument();
   });
 
-  it("submitted offers Replace only; readonly offers nothing", () => {
+  it("submitted offers Replace, plus Remove only when the host provides it; readonly offers nothing", () => {
     const { rerender } = render(
+      <MediaCard state="submitted" file={FILE} kind="video" previewUrl="u" onReplace={() => undefined} />,
+    );
+    // no onRemove from the hook (within capacity): Replace only
+    expect(screen.getByText("Replace…")).toBeInTheDocument();
+    expect(screen.queryByText("Remove")).not.toBeInTheDocument();
+    expect(screen.getByText("Submitted")).toBeInTheDocument();
+
+    // the hook hands submitted extras an onRemove when the collection is over
+    // a lowered capacity: the card must trust it or trimming is impossible
+    rerender(
       <MediaCard
         state="submitted"
         file={FILE}
@@ -56,9 +99,7 @@ describe("MediaCard", () => {
         onRemove={() => undefined}
       />,
     );
-    expect(screen.getByText("Replace…")).toBeInTheDocument();
-    expect(screen.queryByText("Remove")).not.toBeInTheDocument();
-    expect(screen.getByText("Submitted")).toBeInTheDocument();
+    expect(screen.getByText("Remove")).toBeInTheDocument();
 
     rerender(
       <MediaCard
@@ -191,5 +232,119 @@ describe("MediaCard", () => {
     expect(screen.getByText("Not accepted")).toBeInTheDocument();
     expect(screen.getByTestId("media-card-meta")).toHaveTextContent("17.48s");
     expect(screen.getByTestId("media-card-meta")).toHaveTextContent("landscape");
+  });
+
+  it("row layout renders icon-only Replace and Remove with accessible labels", () => {
+    const onReplace = jest.fn();
+    const onRemove = jest.fn();
+    render(
+      <MediaCard
+        layout="row"
+        state="uploaded"
+        file={FILE}
+        kind="video"
+        previewUrl="u"
+        onReplace={onReplace}
+        onRemove={onRemove}
+      />,
+    );
+    expect(screen.queryByText("Replace…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Replace this file"));
+    fireEvent.click(screen.getByLabelText("Remove this file"));
+    expect(onReplace).toHaveBeenCalled();
+    expect(onRemove).toHaveBeenCalled();
+  });
+
+  it("pdf kind renders a pager and pages with the arrows", async () => {
+    const rendered: number[] = [];
+    const pdf = {
+      load: async () => ({
+        pageCount: 3,
+        renderPage: async (page: number) => {
+          rendered.push(page);
+        },
+      }),
+    };
+    render(
+      <MediaCard
+        state="uploaded"
+        file={{ name: "deck.pdf", size: 1000, contentType: "application/pdf" }}
+        kind="pdf"
+        previewUrl="blob:p"
+        pdf={pdf}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId("media-card-pdf-pager")).toBeInTheDocument());
+    expect(screen.getByTestId("media-card-pdf-page")).toHaveTextContent("1 / 3");
+    expect(rendered).toEqual([1]);
+    fireEvent.click(screen.getByLabelText("Next page"));
+    await waitFor(() => expect(screen.getByTestId("media-card-pdf-page")).toHaveTextContent("2 / 3"));
+    await waitFor(() => expect(rendered).toEqual([1, 2]));
+    fireEvent.click(screen.getByLabelText("Previous page"));
+    await waitFor(() => expect(rendered).toEqual([1, 2, 1]));
+    expect((screen.getByLabelText("Previous page") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("the full-size viewer renders the current pdf page as soon as it opens", async () => {
+    const rendered: Array<[number, string | undefined]> = [];
+    const pdf = {
+      load: async () => ({
+        pageCount: 2,
+        renderPage: async (page: number, canvas: HTMLCanvasElement) => {
+          rendered.push([page, canvas.dataset.testid]);
+        },
+      }),
+    };
+    render(<MediaCard state="uploaded" file={{ name: "deck.pdf" }} kind="pdf" previewUrl="blob:p" pdf={pdf} />);
+    await waitFor(() => expect(rendered).toEqual([[1, "media-card-pdf-canvas"]]));
+    fireEvent.click(screen.getByRole("button", { name: "Open full size" }));
+    await waitFor(() => expect(rendered).toContainEqual([1, "media-card-viewer-pdf"]));
+  });
+
+  it("a failing pdf source lands in the broken-preview flow", async () => {
+    const pdf = {
+      load: async () => {
+        throw new Error("bad file");
+      },
+    };
+    render(<MediaCard state="uploaded" file={{ name: "deck.pdf" }} kind="pdf" previewUrl="blob:p" pdf={pdf} />);
+    await waitFor(() => expect(screen.getByText(/Preview couldn't be loaded/)).toBeInTheDocument());
+  });
+
+  it("pdf without a host renderer shows the plain placeholder", () => {
+    render(<MediaCard state="uploaded" file={{ name: "deck.pdf" }} kind="pdf" previewUrl="https://x/p.pdf" />);
+    expect(screen.getByText("No preview for this file type.")).toBeInTheDocument();
+  });
+});
+
+describe("MediaCard server facts and audio", () => {
+  it("audio kind renders a player with controls", () => {
+    render(
+      <MediaCard
+        state="uploaded"
+        file={{ name: "memo.m4a", size: 1000, contentType: "audio/mp4" }}
+        kind="audio"
+        previewUrl="blob:a"
+      />,
+    );
+    const audio = screen.getByTestId("media-card-media").querySelector("audio") as HTMLAudioElement;
+    expect(audio).toBeInTheDocument();
+    expect(audio).toHaveAttribute("controls");
+  });
+
+  it("verified server facts show in the header and the meta row", () => {
+    const { container } = render(
+      <MediaCard
+        state="submitted"
+        file={FILE}
+        kind="video"
+        previewUrl="u"
+        meta={{ durationSec: 10.5, width: 720, height: 1280, verified: true, facts: ["29.97 fps", "iPhone 15 Pro"] }}
+      />,
+    );
+    expect(container.textContent).toContain("verified");
+    expect(screen.getByTestId("media-card-meta")).toHaveTextContent("29.97 fps");
+    expect(screen.getByTestId("media-card-meta")).toHaveTextContent("iPhone 15 Pro");
   });
 });

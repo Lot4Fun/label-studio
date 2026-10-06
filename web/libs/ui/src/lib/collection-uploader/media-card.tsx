@@ -12,13 +12,26 @@
  */
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { IconPlay } from "../../assets/icons";
+import { CornersOutIcon, CaretLeftIcon, CaretRightIcon, PlayIcon, SwapIcon, TrashIcon } from "../../assets/icons";
+import { Tooltip } from "../Tooltip/Tooltip";
 import { Button } from "../button/button";
 import { Message } from "../message/message";
+import { ModalWindow } from "../modal-window";
 import { cn } from "../../utils/utils";
 import { SubmissionRuleBadges, SubmissionStatusChip, type SubmissionRuleResult } from "./submission-rules";
 
 export type MediaCardState = "uploading" | "failed" | "rejected" | "uploaded" | "submitted" | "readonly";
+
+export interface MediaCardPdfHandle {
+  pageCount: number;
+  renderPage(pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number): Promise<void>;
+}
+
+/** Lazily loaded, host-provided PDF renderer; the cache that created it owns
+ * the document's lifetime, the card only reads pages. */
+export interface MediaCardPdfSource {
+  load(): Promise<MediaCardPdfHandle>;
+}
 
 export interface MediaCardFile {
   name: string;
@@ -30,6 +43,10 @@ export interface MediaCardMeta {
   durationSec?: number | null;
   width?: number | null;
   height?: number | null;
+  /** Facts were read by the server from the stored bytes. */
+  verified?: boolean;
+  /** Extra server facts shown in the meta row ("29.97 fps", "iPhone 15 Pro"). */
+  facts?: string[];
 }
 
 export interface MediaCardProps {
@@ -37,8 +54,10 @@ export interface MediaCardProps {
   /** Prefer the stored submission's facts when no local File exists; a missing
    * file renders a neutral "Submission" header instead of crashing. */
   file?: MediaCardFile | null;
-  /** "video" | "image" — anything else renders a plain file placeholder. */
-  kind: "video" | "image" | "file";
+  /** "video" | "image" | "audio" | "pdf" — anything else renders a plain file placeholder. */
+  kind: "video" | "image" | "audio" | "pdf" | "file";
+  /** PDF members: page renderer; without it a PDF falls back to the placeholder. */
+  pdf?: MediaCardPdfSource;
   /** Playable/viewable source (local blob or resolver URL). */
   previewUrl?: string | null;
   /** Optional poster frame for videos (iOS paints nothing until interaction). */
@@ -53,6 +72,8 @@ export interface MediaCardProps {
   meta?: MediaCardMeta | null;
   /** "stored" suffix in the header facts (recovered from the server). */
   storedHint?: boolean;
+  /** Reviewer signal: another contributor already submitted the same content. */
+  duplicate?: "exact";
   onCancel?: () => void;
   onRetry?: () => void;
   onReplace?: () => void;
@@ -63,6 +84,8 @@ export interface MediaCardProps {
   onPreviewError?: () => void;
   /** "row" renders the same data as a dense horizontal row (list view). */
   layout?: "card" | "row";
+  /** "grid" locks the media to a square box on two-column layouts so cards in a row align. */
+  fit?: "natural" | "grid";
   className?: string;
 }
 
@@ -100,6 +123,7 @@ export const MediaCard = ({
   state,
   file,
   kind,
+  pdf,
   previewUrl,
   posterUrl,
   previewBroken: previewBrokenProp = false,
@@ -108,6 +132,7 @@ export const MediaCard = ({
   ruleResults,
   meta,
   storedHint = false,
+  duplicate,
   onCancel,
   onRetry,
   onReplace,
@@ -116,10 +141,17 @@ export const MediaCard = ({
   onMediaMetadata,
   onPreviewError,
   layout = "card",
+  fit = "natural",
   className,
 }: MediaCardProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [pdfHandle, setPdfHandle] = useState<MediaCardPdfHandle | null>(null);
+  const [pdfPage, setPdfPage] = useState(1);
   const [playing, setPlaying] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  // State, not a ref: the viewer mounts inside a portal after the open flag flips, so the render must follow the canvas.
+  const [fullCanvas, setFullCanvas] = useState<HTMLCanvasElement | null>(null);
   // Degrade gracefully on an unknown state (e.g. a legacy template snapshot
   // passing a since-removed value) instead of crashing the interface.
   const chip = CHIP[state] ?? CHIP.uploaded;
@@ -168,12 +200,68 @@ export const MediaCard = ({
     return clearPreviewTimer;
   }, [previewUrl, previewBrokenProp, kind, clearPreviewTimer, markBroken]);
   const previewBroken = previewBrokenProp || autoBroken;
+  const canExpand = !!previewUrl && !previewBroken && kind !== "file" && kind !== "audio";
+  const gridFit = fit === "grid";
+  const fill = gridFit ? "md:h-full" : "";
+
+  useEffect(() => {
+    setPdfHandle(null);
+    setPdfPage(1);
+    if (kind !== "pdf" || !pdf || !previewUrl || previewBrokenProp) return;
+    let alive = true;
+    pdf
+      .load()
+      .then((handle) => {
+        if (alive) setPdfHandle(handle);
+      })
+      .catch(() => {
+        if (alive) markBroken();
+      });
+    return () => {
+      alive = false;
+    };
+  }, [kind, pdf, previewUrl, previewBrokenProp, markBroken]);
+
+  useEffect(() => {
+    const canvas = pdfCanvasRef.current;
+    if (!pdfHandle || !canvas) return;
+    let alive = true;
+    const maxWidth = canvas.parentElement?.clientWidth || 480;
+    pdfHandle
+      .renderPage(pdfPage, canvas, maxWidth)
+      .then(() => {
+        if (alive) clearPreviewTimer();
+      })
+      .catch(() => {
+        if (alive) markBroken();
+      });
+    return () => {
+      alive = false;
+    };
+  }, [pdfHandle, pdfPage, clearPreviewTimer, markBroken]);
+
+  useEffect(() => {
+    if (!fullCanvas || !pdfHandle) return;
+    let alive = true;
+    const maxWidth = fullCanvas.parentElement?.clientWidth || 1200;
+    pdfHandle.renderPage(pdfPage, fullCanvas, maxWidth).catch(() => {
+      if (alive) markBroken();
+    });
+    return () => {
+      alive = false;
+    };
+  }, [fullCanvas, pdfHandle, pdfPage, markBroken]);
 
   const startPlayback = useCallback(() => {
     videoRef.current?.play().catch(() => undefined);
   }, []);
 
-  const facts = [safeFile.contentType || "unknown type", formatSize(safeFile.size), storedHint ? "stored" : ""]
+  const facts = [
+    safeFile.contentType || "unknown type",
+    formatSize(safeFile.size),
+    storedHint ? "stored" : "",
+    meta?.verified ? "verified" : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -184,6 +272,7 @@ export const MediaCard = ({
     metaParts.push(`${meta.width} × ${meta.height}`);
     metaParts.push((meta.height as number) >= (meta.width as number) ? "portrait" : "landscape");
   }
+  if (meta?.facts?.length) metaParts.push(...meta.facts);
 
   const rowActions = editable && state !== "readonly" && (
     <span className="ml-auto flex flex-none items-center gap-tight">
@@ -198,14 +287,27 @@ export const MediaCard = ({
         </Button>
       ) : null}
       {state !== "uploading" && onReplace ? (
-        <Button size="small" look="outlined" onClick={onReplace}>
-          Replace
-        </Button>
+        <Tooltip title="Replace this file">
+          <Button
+            size="small"
+            look="outlined"
+            aria-label="Replace this file"
+            leading={<SwapIcon />}
+            onClick={onReplace}
+          />
+        </Tooltip>
       ) : null}
-      {state !== "uploading" && state !== "submitted" && onRemove ? (
-        <Button size="small" look="string" variant="negative" onClick={onRemove}>
-          Remove
-        </Button>
+      {state !== "uploading" && onRemove ? (
+        <Tooltip title="Remove this file">
+          <Button
+            size="small"
+            look="string"
+            variant="negative"
+            aria-label="Remove this file"
+            leading={<TrashIcon />}
+            onClick={onRemove}
+          />
+        </Tooltip>
       ) : null}
     </span>
   );
@@ -259,6 +361,7 @@ export const MediaCard = ({
             </span>
           </span>
         ) : null}
+        {duplicate ? <SubmissionStatusChip tone="warning">Duplicate</SubmissionStatusChip> : null}
         <SubmissionStatusChip tone={chip.tone}>{chip.text(progress)}</SubmissionStatusChip>
         {rowActions}
       </div>
@@ -268,7 +371,7 @@ export const MediaCard = ({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-small border border-neutral-border bg-neutral-surface",
+        "flex h-full flex-col overflow-hidden rounded-small border border-neutral-border bg-neutral-surface",
         className,
       )}
       data-testid={`media-card-${state}`}
@@ -281,12 +384,22 @@ export const MediaCard = ({
           <span className="block truncate font-medium text-neutral-content text-sm">{safeFile.name}</span>
           <span className="block truncate text-neutral-content-subtler text-xs">{facts}</span>
         </span>
+        {duplicate ? <SubmissionStatusChip tone="warning">Duplicate</SubmissionStatusChip> : null}
         <SubmissionStatusChip tone={chip.tone}>{chip.text(progress)}</SubmissionStatusChip>
       </div>
 
-      <div className="relative m-tight overflow-hidden rounded-small" data-testid="media-card-media">
+      <div
+        className={cn("relative m-tight overflow-hidden rounded-small", gridFit && "md:aspect-square")}
+        data-testid="media-card-media"
+        data-fit={fit}
+      >
         {previewBroken || !previewUrl ? (
-          <div className="flex h-36 items-center justify-center bg-neutral-emphasis-subtle px-wide text-center text-neutral-content-subtler text-xs">
+          <div
+            className={cn(
+              "flex h-[320px] w-full items-center justify-center bg-neutral-emphasis-subtle px-wide text-center text-neutral-content-subtler text-xs",
+              fill,
+            )}
+          >
             {previewBroken
               ? "Preview couldn't be loaded — the file is stored safely."
               : kind === "file"
@@ -299,7 +412,7 @@ export const MediaCard = ({
             src={previewUrl}
             alt={safeFile.name}
             loading="lazy"
-            className="block max-h-80 w-full bg-neutral-emphasis object-contain"
+            className={cn("block h-auto w-full bg-neutral-emphasis object-contain", fill)}
             onLoad={(event) => {
               const img = event.currentTarget;
               if (!img.naturalWidth) {
@@ -311,7 +424,40 @@ export const MediaCard = ({
             }}
             onError={markBroken}
           />
-        ) : (
+        ) : kind === "pdf" && pdf ? (
+          <div
+            className={cn("relative w-full bg-neutral-emphasis-subtle", !pdfHandle && "h-[320px]", fill)}
+            data-testid="media-card-pdf"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: the group is the arrow-key paging target
+            tabIndex={0}
+            role="group"
+            aria-label={pdfHandle ? `PDF preview, page ${pdfPage} of ${pdfHandle.pageCount}` : "PDF preview loading"}
+            onKeyDown={(event) => {
+              if (!pdfHandle) return;
+              if (event.key === "ArrowLeft") setPdfPage((page) => Math.max(1, page - 1));
+              if (event.key === "ArrowRight") setPdfPage((page) => Math.min(pdfHandle.pageCount, page + 1));
+            }}
+          >
+            <canvas
+              ref={pdfCanvasRef}
+              className={cn("block h-auto w-full", gridFit && "md:h-full md:object-contain")}
+              data-testid="media-card-pdf-canvas"
+            />
+            {!pdfHandle ? (
+              <div className="absolute inset-0 flex items-center justify-center text-neutral-content-subtler text-xs">
+                Preparing preview…
+              </div>
+            ) : null}
+            {pdfHandle && pdfHandle.pageCount > 1 ? (
+              <PdfPager
+                page={pdfPage}
+                pageCount={pdfHandle.pageCount}
+                onChange={setPdfPage}
+                className="-translate-x-1/2 absolute bottom-tight left-1/2"
+              />
+            ) : null}
+          </div>
+        ) : kind === "video" ? (
           <>
             {/* biome-ignore lint/a11y/useMediaCaption: contributor-submitted media has no captions */}
             <video
@@ -321,7 +467,7 @@ export const MediaCard = ({
               playsInline
               controls={playing}
               preload="metadata"
-              className="block max-h-80 w-full bg-[black]"
+              className={cn("block h-auto w-full bg-[black] object-contain", fill)}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onLoadedMetadata={(event) => {
@@ -340,13 +486,84 @@ export const MediaCard = ({
                 className="absolute inset-0 flex cursor-pointer items-center justify-center border-none bg-transparent"
               >
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-surface text-neutral-content shadow-medium">
-                  <IconPlay width={24} height={24} />
+                  <PlayIcon size={24} weight="fill" />
                 </span>
               </button>
             ) : null}
           </>
+        ) : kind === "audio" ? (
+          <div
+            className={cn("flex h-[320px] w-full items-center justify-center bg-neutral-emphasis-subtle px-wide", fill)}
+          >
+            {/* biome-ignore lint/a11y/useMediaCaption: contributor-submitted media has no captions */}
+            <audio
+              src={previewUrl}
+              controls
+              preload="metadata"
+              className="w-full"
+              onLoadedMetadata={(event) => {
+                clearPreviewTimer();
+                onMediaMetadata?.({ durationSec: event.currentTarget.duration });
+              }}
+              onError={markBroken}
+            />
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "flex h-[320px] w-full items-center justify-center bg-neutral-emphasis-subtle px-wide text-center text-neutral-content-subtler text-xs",
+              fill,
+            )}
+          >
+            No preview for this file type.
+          </div>
         )}
+        {canExpand ? (
+          <span className="absolute top-tight right-tight">
+            <Button
+              size="small"
+              look="outlined"
+              aria-label="Open full size"
+              data-testid="media-card-expand"
+              leading={<CornersOutIcon />}
+              onClick={() => setExpanded(true)}
+            />
+          </span>
+        ) : null}
       </div>
+
+      <ModalWindow open={expanded} onOpenChange={setExpanded} size="fullscreen" title={safeFile.name}>
+        <div
+          className="flex h-full min-h-0 flex-col items-center justify-center gap-tight"
+          data-testid="media-card-viewer"
+        >
+          {kind === "image" && previewUrl ? (
+            <img src={previewUrl} alt={safeFile.name} className="min-h-0 max-h-full max-w-full object-contain" />
+          ) : null}
+          {kind === "video" && previewUrl ? (
+            // biome-ignore lint/a11y/useMediaCaption: contributor-submitted media has no captions
+            <video
+              src={previewUrl}
+              controls
+              autoPlay
+              playsInline
+              className="min-h-0 max-h-full max-w-full bg-[black]"
+            />
+          ) : null}
+          {kind === "pdf" && pdfHandle ? (
+            <>
+              <canvas
+                ref={setFullCanvas}
+                className="block min-h-0 max-w-full flex-1 object-contain"
+                data-testid="media-card-viewer-pdf"
+              />
+              {pdfHandle.pageCount > 1 ? (
+                <PdfPager page={pdfPage} pageCount={pdfHandle.pageCount} onChange={setPdfPage} className="shrink-0" />
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </ModalWindow>
 
       {state === "uploading" ? (
         <div
@@ -390,7 +607,7 @@ export const MediaCard = ({
       {editable &&
       (state === "uploading" || onRetry || onReplace || onRemove || (previewBroken && onRetryPreview)) &&
       state !== "readonly" ? (
-        <div className="flex overflow-x-auto border-neutral-border-subtle border-t p-tight [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-auto flex overflow-x-auto border-neutral-border-subtle border-t p-tight [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <span className="ml-auto flex flex-none items-center gap-tight">
             {state === "uploading" && onCancel ? (
               <Button size="small" look="string" variant="negative" onClick={onCancel}>
@@ -408,12 +625,12 @@ export const MediaCard = ({
               </Button>
             ) : null}
             {state !== "uploading" && onReplace ? (
-              <Button size="small" look="outlined" onClick={onReplace}>
+              <Button size="small" look="outlined" leading={<SwapIcon />} onClick={onReplace}>
                 Replace…
               </Button>
             ) : null}
-            {state !== "uploading" && state !== "submitted" && onRemove ? (
-              <Button size="small" look="string" variant="negative" onClick={onRemove}>
+            {state !== "uploading" && onRemove ? (
+              <Button size="small" look="string" variant="negative" leading={<TrashIcon />} onClick={onRemove}>
                 Remove
               </Button>
             ) : null}
@@ -423,3 +640,45 @@ export const MediaCard = ({
     </div>
   );
 };
+
+function PdfPager({
+  page,
+  pageCount,
+  onChange,
+  className,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (update: (page: number) => number) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-tightest rounded-small border border-neutral-border bg-neutral-surface px-tightest shadow-medium",
+        className,
+      )}
+      data-testid="media-card-pdf-pager"
+    >
+      <Button
+        size="small"
+        look="string"
+        aria-label="Previous page"
+        leading={<CaretLeftIcon />}
+        disabled={page <= 1}
+        onClick={() => onChange((current) => Math.max(1, current - 1))}
+      />
+      <span className="text-neutral-content-subtle text-xs tabular-nums" data-testid="media-card-pdf-page">
+        {page} / {pageCount}
+      </span>
+      <Button
+        size="small"
+        look="string"
+        aria-label="Next page"
+        leading={<CaretRightIcon />}
+        disabled={page >= pageCount}
+        onClick={() => onChange((current) => Math.min(pageCount, current + 1))}
+      />
+    </div>
+  );
+}
