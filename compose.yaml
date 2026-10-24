@@ -57,7 +57,13 @@ services:
     command: label-studio-uwsgi
 
   db:
-    image: pgautoupgrade/pgautoupgrade:17-alpine
+    build:
+      context: .
+      # Keep the upstream image contents under a project-specific name.
+      dockerfile_inline: |
+        FROM pgautoupgrade/pgautoupgrade:17-alpine
+    image: label-studio-db:17-alpine
+    pull_policy: build
     networks:
       - label-studio
     hostname: db
