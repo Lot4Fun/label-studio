@@ -1,4 +1,5 @@
-FROM heartexlabs/label-studio:latest
+ARG BASE_IMAGE=heartexlabs/label-studio:latest
+FROM ${BASE_IMAGE}
 
 # change to root user to create a new user
 USER root

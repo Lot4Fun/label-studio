@@ -1,7 +1,8 @@
 services:
   nginx:
     build: .
-    image: heartexlabs/label-studio:latest
+    image: label-studio-nginx:latest
+    pull_policy: build
     networks:
       - label-studio
     restart: unless-stopped
@@ -23,6 +24,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.custom
+      args:
+        BASE_IMAGE: label-studio-base
+      # Reuse this build's nginx image instead of a separately pulled base image.
+      # Requires Docker Compose 2.22+ and BuildKit.
+      additional_contexts:
+        label-studio-base: service:nginx
+    image: label-studio-app:latest
+    pull_policy: build
     networks:
       - label-studio
     user: ops-admin
