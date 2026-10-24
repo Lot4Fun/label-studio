@@ -57,7 +57,7 @@ services:
     command: label-studio-uwsgi
 
   db:
-    image: pgautoupgrade/pgautoupgrade:13-alpine
+    image: pgautoupgrade/pgautoupgrade:17-alpine
     networks:
       - label-studio
     hostname: db
