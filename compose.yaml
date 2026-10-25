@@ -26,8 +26,6 @@ services:
       dockerfile: Dockerfile.custom
       args:
         BASE_IMAGE: label-studio-base
-      # Reuse this build's nginx image instead of a separately pulled base image.
-      # Requires Docker Compose 2.22+ and BuildKit.
       additional_contexts:
         label-studio-base: service:nginx
     image: label-studio-app:latest
@@ -51,7 +49,7 @@ services:
       - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
       - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/data/local_storage
       - JSON_LOG=1
-    #      - LOG_LEVEL=DEBUG
+      #- LOG_LEVEL=DEBUG
     volumes:
       - ./mydata:/label-studio/data:rw
     command: label-studio-uwsgi
@@ -59,7 +57,6 @@ services:
   postgres:
     build:
       context: .
-      # Match the existing PostgreSQL and Alpine versions under a project-specific name.
       dockerfile_inline: |
         FROM postgres:17.11-alpine3.24
     image: label-studio-postgres:17.11-alpine3.24
